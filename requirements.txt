@@ -1,0 +1,6 @@
+Django
+psycopg2-binary
+rsa
+python-dotenv
+pyjwt
+django-cors-headers
