@@ -5,6 +5,7 @@ import random
 import dotenv
 import rsa
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import IntegrityError
 from django.http import HttpResponseBadRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
@@ -104,6 +105,8 @@ def add_env(request):
             return error_response("User does not exist", 404)
         except rsa.pkcs1.CryptoError:
             return error_response("Encryption failed", 500)
+        except IntegrityError:
+            return error_response("Secret with same name already exists", 400)
         except Exception as e:
             logger.error(f"Unexpected error: {e}", exc_info=True)
             return error_response(str(e), 500)
@@ -260,10 +263,7 @@ def update_env(request):
     if request.method == "PUT":
         token = request.COOKIES.get("session_token")
         data = json.loads(request.body)
-        name = data.get("name")
-
-        if name is None:
-            return error_response("Env name is missing", 400)
+        id = data.get("id")
 
         if not token:
             return error_response("Authentication token is missing", 401)
@@ -271,10 +271,16 @@ def update_env(request):
         payload = decode_jwt(token)
         if not payload:
             return error_response("Invalid token or token has expired", 401)
-
+        name = data.get("name")
         try:
             user = User.objects.get(id=payload["id"])
-            env = Env.objects.get(name=name, user=user)
+            if not user:
+                return error_response("User not found", 404)
+
+            if Env.objects.get(name=name, user=user):
+                return error_response("Secret with same name already exists", 400)
+
+            env = Env.objects.get(id=id)
         except User.DoesNotExist:
             return error_response("User not found", 404)
         except Env.DoesNotExist:
@@ -291,12 +297,58 @@ def update_env(request):
             env.value = encrypted_value.hex()
             env.key_id = privateKey_instance
 
+        if name:
+            env.name = name
         description = data.get("description")
         if description:
             env.description = description
 
         env.save()
 
-        return JsonResponse({"message": "Successfully updated env"})
+        return JsonResponse(
+            {
+                "message": "Successfully updated env",
+                data: {
+                    "id": env.id,
+                    "name": env.name,
+                    "value": env.value,
+                    "user": env.user.email,
+                    "description": env.description,
+                    "access_password": env.access_password,
+                },
+            }
+        )
 
     return error_response("Invalid request method", 405)
+
+
+@csrf_exempt
+def delete_secret(request):
+    if request.method == "DELETE":
+        try:
+            token = request.COOKIES.get("session_token")
+
+            if not token:
+                return error_response("Authentication token is missing", 401)
+
+            payload = decode_jwt(token)
+            if not payload:
+                return error_response("Invalid token or token has expired", 401)
+
+            id = request.GET.get("id")
+            if id is None:
+                return error_response("Env id is missing", 400)
+
+            env = Env.objects.get(id=id)
+            env.delete()
+            return JsonResponse(
+                {"message": "Successfully deleted env", "data": {"id": id}}
+            )
+
+        except Env.DoesNotExist:
+            return error_response("Env not found", 404)
+
+        except Exception as e:
+            return error_response(str(e), 500)
+
+    return error_response("Method not allowed", 405)

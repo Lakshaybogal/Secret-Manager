@@ -29,7 +29,7 @@ SECRET_KEY = os.getenv("SECRET_KEY")
 
 JWT_SECRET_KEY = SECRET_KEY
 JWT_ALGORITHM = "HS256"
-JWT_EXP_DELTA_SECONDS = 300
+JWT_EXP_DELTA_SECONDS = 3000  # 5 minutes
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True

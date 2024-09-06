@@ -32,3 +32,9 @@ class Env(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.value})"
+
+    def delete(self, *args, **kwargs):
+        # Ensure the related EnvSecret is deleted first
+        if self.key_id:
+            self.key_id.delete()
+        super().delete(*args, **kwargs)
